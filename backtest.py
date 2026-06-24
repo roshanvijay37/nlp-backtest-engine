@@ -125,6 +125,9 @@ def parse_strategy(text: str) -> dict:
     bb = "bollinger" in t or "bb" in t
     bb_lower = "lower" in t or "bounce" in t
     
+    # Use FYERS data source?
+    use_fyers = "fyers" in t or "via fyers" in t or "using fyers" in t
+    
     return {
         "symbol": symbol,
         "timeframe": tf,
@@ -143,10 +146,19 @@ def parse_strategy(text: str) -> dict:
         "sma_slow": sma_slow or 200,
         "bollinger": bb,
         "bollinger_lower": bb_lower,
+        "use_fyers": use_fyers,
     }
 
 
-def fetch_data(symbol: str, start: str, end: str, tf: str) -> pd.DataFrame:
+def fetch_data(symbol: str, start: str, end: str, tf: str, use_fyers: bool = False) -> pd.DataFrame:
+    # Try FYERS first if enabled
+    if use_fyers:
+        try:
+            return fetch_fyers_data(symbol, start, end, tf)
+        except Exception as e:
+            print(f"⚠️  FYERS failed: {e}")
+            print("   Falling back to Yahoo Finance...")
+    
     # Yahoo Finance intraday data limitation: max 60 days for sub-daily
     from datetime import datetime, timedelta
     start_dt = datetime.strptime(start, "%Y-%m-%d")
@@ -169,6 +181,70 @@ def fetch_data(symbol: str, start: str, end: str, tf: str) -> pd.DataFrame:
     df = df.reset_index()
     col0 = df.columns[0]
     df = df.rename(columns={col0: "datetime"})
+    return df
+
+
+def fetch_fyers_data(symbol: str, start: str, end: str, tf: str) -> pd.DataFrame:
+    """Fetch data from FYERS via TradingOS server."""
+    import urllib.request
+    import os
+    
+    SERVER_URL = os.environ.get("TRADINGOS_API", "https://api.roshanvijay.com/api")
+    SESSION_ID = os.environ.get("FYERS_SESSION_ID")
+    
+    if not SESSION_ID:
+        raise ValueError("FYERS_SESSION_ID not set. Set it with: export FYERS_SESSION_ID=your_session_id")
+    
+    # Convert symbol to FYERS format
+    fyers_symbol = symbol.replace("^NSEI", "NSE:NIFTY 50").replace("^NSEBANK", "NSE:NIFTY BANK").replace(".NS", "")
+    
+    from_ts = int(datetime.strptime(start, "%Y-%m-%d").timestamp())
+    to_ts = int(datetime.strptime(end, "%Y-%m-%d").timestamp()) + 86400
+    
+    url = f"{SERVER_URL}/backtest/run"
+    data = json.dumps({
+        "symbol": fyers_symbol,
+        "resolution": tf.replace("m", "").replace("h", "60").replace("d", "D"),
+        "fromDate": start,
+        "toDate": end,
+    }).encode()
+    
+    req = urllib.request.Request(url, data=data, headers={
+        "Content-Type": "application/json",
+        "x-session-id": SESSION_ID,
+    }, method="POST")
+    
+    print(f"\\n📊 Fetching {fyers_symbol} [{tf}] from FYERS...")
+    with urllib.request.urlopen(req) as resp:
+        result = json.loads(resp.read().decode())
+    
+    if not result.get("success"):
+        raise ValueError(result.get("error", "FYERS API error"))
+    
+    # FYERS returns raw candles in result, but our backtest API returns full result
+    # For now, we'll just use the raw data approach
+    # Actually, let's call the FYERS data API directly
+    
+    data_url = f"https://api-t1.fyers.in/data/history?symbol={urllib.parse.quote(fyers_symbol)}&resolution={tf.replace('m', '').replace('h', '60').replace('d', 'D')}&date_format=0&range_from={from_ts}&range_to={to_ts}&cont_flag=1"
+    
+    data_req = urllib.request.Request(data_url, headers={
+        "Authorization": f"{os.environ.get('FYERS_APP_ID', '')}:{SESSION_ID}",
+    })
+    
+    with urllib.request.urlopen(data_req) as resp:
+        fyers_data = json.loads(resp.read().decode())
+    
+    if fyers_data.get("s") != "ok":
+        raise ValueError(fyers_data.get("message", "FYERS data error"))
+    
+    candles = fyers_data.get("candles", [])
+    if not candles:
+        raise ValueError("No candles returned from FYERS")
+    
+    df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    df["datetime"] = pd.to_datetime(df["timestamp"], unit="s")
+    df = df.drop("timestamp", axis=1)
+    
     return df
 
 
@@ -196,7 +272,7 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
 
 def run_backtest(config: dict) -> dict:
-    df = fetch_data(config["symbol"], config["start_date"], config["end_date"], config["timeframe"])
+    df = fetch_data(config["symbol"], config["start_date"], config["end_date"], config["timeframe"], use_fyers=config.get("use_fyers", False))
     df = add_indicators(df, config)
     
     capital = config["capital"]
