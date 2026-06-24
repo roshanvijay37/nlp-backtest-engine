@@ -185,64 +185,46 @@ def fetch_data(symbol: str, start: str, end: str, tf: str, use_fyers: bool = Fal
 
 
 def fetch_fyers_data(symbol: str, start: str, end: str, tf: str) -> pd.DataFrame:
-    """Fetch data from FYERS via TradingOS server."""
+    """Fetch data from FYERS via TradingOS server (no session ID needed)."""
     import urllib.request
     import os
     
     SERVER_URL = os.environ.get("TRADINGOS_API", "https://api.roshanvijay.com/api")
-    SESSION_ID = os.environ.get("FYERS_SESSION_ID")
-    
-    if not SESSION_ID:
-        raise ValueError("FYERS_SESSION_ID not set. Set it with: export FYERS_SESSION_ID=your_session_id")
     
     # Convert symbol to FYERS format
-    fyers_symbol = symbol.replace("^NSEI", "NSE:NIFTY 50").replace("^NSEBANK", "NSE:NIFTY BANK").replace(".NS", "")
+    fyers_symbol = symbol.replace("^NSEI", "NSE:NIFTYBANK-INDEX").replace("^NSEBANK", "NSE:NIFTYBANK-INDEX").replace(".NS", "")
     
-    from_ts = int(datetime.strptime(start, "%Y-%m-%d").timestamp())
-    to_ts = int(datetime.strptime(end, "%Y-%m-%d").timestamp()) + 86400
+    # Map timeframe
+    resolution = tf.replace("m", "").replace("h", "60").replace("d", "D")
     
-    url = f"{SERVER_URL}/backtest/run"
+    url = f"{SERVER_URL}/backtest/data"
     data = json.dumps({
         "symbol": fyers_symbol,
-        "resolution": tf.replace("m", "").replace("h", "60").replace("d", "D"),
+        "resolution": resolution,
         "fromDate": start,
         "toDate": end,
     }).encode()
     
     req = urllib.request.Request(url, data=data, headers={
         "Content-Type": "application/json",
-        "x-session-id": SESSION_ID,
     }, method="POST")
     
-    print(f"\\n📊 Fetching {fyers_symbol} [{tf}] from FYERS...")
+    print(f"\\n📊 Fetching {fyers_symbol} [{tf}] from FYERS via TradingOS...")
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read().decode())
     
     if not result.get("success"):
-        raise ValueError(result.get("error", "FYERS API error"))
+        error_msg = result.get("error", "Unknown error")
+        if "session" in error_msg.lower():
+            raise ValueError(f"{error_msg} - Please connect FYERS at https://roshanvijay.com")
+        raise ValueError(error_msg)
     
-    # FYERS returns raw candles in result, but our backtest API returns full result
-    # For now, we'll just use the raw data approach
-    # Actually, let's call the FYERS data API directly
-    
-    data_url = f"https://api-t1.fyers.in/data/history?symbol={urllib.parse.quote(fyers_symbol)}&resolution={tf.replace('m', '').replace('h', '60').replace('d', 'D')}&date_format=0&range_from={from_ts}&range_to={to_ts}&cont_flag=1"
-    
-    data_req = urllib.request.Request(data_url, headers={
-        "Authorization": f"{os.environ.get('FYERS_APP_ID', '')}:{SESSION_ID}",
-    })
-    
-    with urllib.request.urlopen(data_req) as resp:
-        fyers_data = json.loads(resp.read().decode())
-    
-    if fyers_data.get("s") != "ok":
-        raise ValueError(fyers_data.get("message", "FYERS data error"))
-    
-    candles = fyers_data.get("candles", [])
+    candles = result.get("candles", [])
     if not candles:
         raise ValueError("No candles returned from FYERS")
     
-    df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["datetime"] = pd.to_datetime(df["timestamp"], unit="s")
+    df = pd.DataFrame(candles)
+    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
     df = df.drop("timestamp", axis=1)
     
     return df
