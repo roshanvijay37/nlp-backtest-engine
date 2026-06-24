@@ -28,15 +28,17 @@ class Trade:
 def parse_strategy(text: str) -> dict:
     t = text.lower()
     
-    # Symbol mapping
+    # Symbol mapping - check longer names first
     sym_map = {
-        "nifty 50": "^NSEI", "nifty": "^NSEI",
-        "bank nifty": "^NSEBANK", "nifty bank": "^NSEBANK",
+        "bank nifty": "^NSEBANK",
+        "nifty bank": "^NSEBANK",
+        "nifty 50": "^NSEI",
         "fin nifty": "NIFTY_FIN_SERVICE.NS",
         "sensex": "^BSESN",
         "reliance": "RELIANCE.NS",
         "tcs": "TCS.NS", "infy": "INFY.NS",
         "hdfcbank": "HDFCBANK.NS", "sbin": "SBIN.NS",
+        "nifty": "^NSEI",
     }
     symbol = "^NSEI"
     for name, code in sym_map.items():
@@ -46,10 +48,10 @@ def parse_strategy(text: str) -> dict:
     
     # Timeframe
     tf = "1d"
-    if "1 min" in t or "1 minute" in t: tf = "1m"
-    elif "5 min" in t or "5 minute" in t: tf = "5m"
-    elif "15 min" in t or "15 minute" in t: tf = "15m"
-    elif "30 min" in t or "30 minute" in t: tf = "30m"
+    if "1min" in t or "1 min" in t or "1 minute" in t: tf = "1m"
+    elif "5min" in t or "5 min" in t or "5 minute" in t: tf = "5m"
+    elif "15min" in t or "15 min" in t or "15 minute" in t: tf = "15m"
+    elif "30min" in t or "30 min" in t or "30 minute" in t: tf = "30m"
     elif "1 hour" in t or "hourly" in t: tf = "1h"
     elif "daily" in t or "day" in t: tf = "1d"
     elif "weekly" in t: tf = "1wk"
@@ -65,8 +67,14 @@ def parse_strategy(text: str) -> dict:
     
     # Capital
     capital = 1_000_000
-    cap_match = re.search(r'(\d+)\s*(?:lac|lakh)', t)
-    if cap_match: capital = int(cap_match.group(1)) * 100_000
+    cap_match = re.search(r'(\d+)\s*(?:lac|lakh|lacs|lakhs)', t)
+    if cap_match: 
+        capital = int(cap_match.group(1)) * 100_000
+    else:
+        # Check for "10 lakh" without space
+        cap_match2 = re.search(r'(\d+)lakh', t)
+        if cap_match2:
+            capital = int(cap_match2.group(1)) * 100_000
     
     # Risk per trade
     risk = 1.0
