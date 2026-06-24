@@ -147,11 +147,24 @@ def parse_strategy(text: str) -> dict:
 
 
 def fetch_data(symbol: str, start: str, end: str, tf: str) -> pd.DataFrame:
+    # Yahoo Finance intraday data limitation: max 60 days for sub-daily
+    from datetime import datetime, timedelta
+    start_dt = datetime.strptime(start, "%Y-%m-%d")
+    end_dt = datetime.strptime(end, "%Y-%m-%d")
+    days_diff = (end_dt - start_dt).days
+    
+    intraday_tfs = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
+    if tf in intraday_tfs and days_diff > 60:
+        print(f"⚠️  Yahoo Finance limits intraday data to last 60 days.")
+        print(f"   Adjusting start date from {start} to {(end_dt - timedelta(days=60)).strftime('%Y-%m-%d')}")
+        start_dt = end_dt - timedelta(days=60)
+        start = start_dt.strftime("%Y-%m-%d")
+    
     print(f"\\n📊 Fetching {symbol} [{tf}] from {start} to {end}...")
     ticker = yf.Ticker(symbol)
     df = ticker.history(start=start, end=end, interval=tf)
     if df.empty:
-        raise ValueError(f"No data for {symbol}")
+        raise ValueError(f"No data for {symbol} - try a shorter date range or daily timeframe")
     df.columns = [c.lower().replace(" ", "_") for c in df.columns]
     df = df.reset_index()
     col0 = df.columns[0]
