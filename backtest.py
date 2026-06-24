@@ -65,23 +65,23 @@ def parse_strategy(text: str) -> dict:
     
     # Capital
     capital = 1_000_000
-    cap_match = re.search(r'(\\d+)\\s*(?:lac|lakh)', t)
+    cap_match = re.search(r'(\d+)\s*(?:lac|lakh)', t)
     if cap_match: capital = int(cap_match.group(1)) * 100_000
     
     # Risk per trade
     risk = 1.0
-    risk_match = re.search(r'(\\d+(?:\\.\\d+)?)\\s*%\\s*risk', t)
+    risk_match = re.search(r'(\d+(?:\.\d+)?)\s*%\s*risk', t)
     if risk_match: risk = float(risk_match.group(1))
     
     # Stop loss
     sl = None
-    sl_match = re.search(r'stop\\s*loss\\s+(\\d+(?:\\.\\d+)?)\\s*%', t)
+    sl_match = re.search(r'stop\s*loss\s+(\d+(?:\.\d+)?)\s*%', t)
     if sl_match: sl = float(sl_match.group(1)) / 100
     
     # Take profit / R:R
     tp = None
-    tp_match = re.search(r'target\\s+(\\d+(?:\\.\\d+)?)\\s*%', t)
-    rr_match = re.search(r'risk[\\s:]*reward\\s*(?:ratio)?\\s*(?:of\\s*)?(\\d+(?:\\.\\d+)?)\\s*[:\\-]?\\s*(\\d+(?:\\.\\d+)?)', t)
+    tp_match = re.search(r'target\s+(\d+(?:\.\d+)?)\s*%', t)
+    rr_match = re.search(r'risk[\s:]*reward\s*(?:ratio)?\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*[:\-]?\s*(\d+(?:\.\d+)?)', t)
     if tp_match:
         tp = float(tp_match.group(1)) / 100
     elif rr_match:
@@ -92,13 +92,13 @@ def parse_strategy(text: str) -> dict:
     rsi_entry = None
     rsi_exit = None
     
-    rsi_match = re.search(r'rsi\\s*\\(?\\s*(\\d+)?\\s*\\)?\\s*(<|below|under)\\s*(\\d+)', t)
+    rsi_match = re.search(r'rsi\s*\(?\s*(\d+)?\s*\)?\s*(<|below|under)\s*(\d+)', t)
     if rsi_match:
         if rsi_match.group(1): rsi_period = int(rsi_match.group(1))
         rsi_entry = int(rsi_match.group(3))
         rsi_exit = 70 if rsi_entry < 50 else 30
     
-    rsi_exit_match = re.search(r'(?:sell|exit).+rsi\\s*(>|above)\\s*(\\d+)', t)
+    rsi_exit_match = re.search(r'(?:sell|exit).+rsi\s*(>|above)\s*(\d+)', t)
     if rsi_exit_match:
         rsi_exit = int(rsi_exit_match.group(2))
     
@@ -107,7 +107,7 @@ def parse_strategy(text: str) -> dict:
     death = "death cross" in t
     
     sma_fast, sma_slow = None, None
-    sma_match = re.search(r'(\\d+)\\s*sma\\s*(?:crosses|crosse[sd])\\s*(?:above|below)\\s*(\\d+)\\s*sma', t)
+    sma_match = re.search(r'(\d+)\s*sma\s*(?:crosses|crosse[sd])\s*(?:above|below)\s*(\d+)\s*sma', t)
     if sma_match:
         golden = True
         sma_fast = int(sma_match.group(1))
